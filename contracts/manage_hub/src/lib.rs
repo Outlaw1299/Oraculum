@@ -86,6 +86,7 @@ mod validation;
 #[cfg(test)]
 mod edge_case_tests;
 #[cfg(test)]
+mod hub_init_tests;
 mod staking_overflow_tests;
 mod allowance_spender_tests;
 
@@ -148,6 +149,7 @@ impl Contract {
         user: Address,
         expiry_date: u64,
     ) -> Result<(), Error> {
+        MembershipTokenContract::require_hub_initialized(&env)?;
         MembershipTokenContract::issue_token(env, id, user, expiry_date)?;
         Ok(())
     }
@@ -277,6 +279,15 @@ impl Contract {
         MembershipTokenContract::get_token(env, id)
     }
 
+    /// Returns `true` if `set_admin` has been called at least once.
+    ///
+    /// Public operations that read hub configuration call the internal
+    /// `require_hub_initialized` guard which returns `Error::AdminNotSet`
+    /// when this function returns `false`.
+    pub fn is_hub_initialized(env: Env) -> bool {
+        MembershipTokenContract::is_hub_initialized(&env)
+    }
+
     pub fn set_admin(env: Env, admin: Address) -> Result<(), Error> {
         if let Some(current_admin) = env
             .storage()
@@ -318,6 +329,7 @@ impl Contract {
         amount: i128,
         duration: u64,
     ) -> Result<(), Error> {
+        MembershipTokenContract::require_hub_initialized(&env)?;
         SubscriptionContract::create_subscription(env, id, user, payment_token, amount, duration)
     }
 
@@ -1228,6 +1240,7 @@ impl Contract {
         tier_id: String,
         amount: i128,
     ) -> Result<(), Error> {
+        MembershipTokenContract::require_hub_initialized(&env)?;
         StakingModule::stake_tokens(env, staker, tier_id, amount)
     }
 
