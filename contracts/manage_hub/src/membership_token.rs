@@ -38,6 +38,12 @@ pub enum DataKey {
     /// Version snapshot for rollback, keyed by token ID and version number.
     VersionSnapshot(BytesN<32>, u32),
     Royalty(BytesN<32>),
+    /// Sentinel flag set by `set_admin` the first time to mark the hub as
+    /// initialised. Public operations call `require_hub_initialized` before
+    /// reading any other configuration to ensure they fail with a stable
+    /// `AdminNotSet` error rather than panicking or returning a misleading
+    /// result when the hub has never been set up.
+    HubInitialized,
 }
 
 #[contracttype]
@@ -423,9 +429,37 @@ impl MembershipTokenContract {
         Ok(token)
     }
 
+    /// Returns `true` if the hub has been initialised (i.e. `set_admin` has
+    /// been called at least once).
+    pub fn is_hub_initialized(env: &Env) -> bool {
+        env.storage().instance().has(&DataKey::HubInitialized)
+    }
+
+    /// Guard called at the top of public hub operations that read
+    /// configuration.  Returns `Error::AdminNotSet` when the hub has not
+    /// yet had an admin set, which is the canonical "not initialised" state.
+    pub fn require_hub_initialized(env: &Env) -> Result<(), Error> {
+        if !Self::is_hub_initialized(env) {
+            return Err(Error::AdminNotSet);
+        }
+        Ok(())
+    }
+
     pub fn set_admin(env: Env, admin: Address) -> Result<(), Error> {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        // Stamp the initialisation sentinel the first time an admin is set.
+        // Re-setting the admin does not reset this flag so all subsequent
+        // calls to `require_hub_initialized` continue to pass.
+        if !env
+            .storage()
+            .instance()
+            .has(&DataKey::HubInitialized)
+        {
+            env.storage()
+                .instance()
+                .set(&DataKey::HubInitialized, &true);
+        }
 
         // Emit admin set event
         env.events().publish(
